@@ -1,0 +1,712 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>바둑 게임</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #f4efe6;
+    --panel: #ffffff;
+    --text: #2b2118;
+    --muted: #7a6a58;
+    --accent: #8b5a2b;
+    --accent-text: #ffffff;
+    --border: #e2d6c3;
+    --wood: #dcb35c;
+    --wood-dark: #c99a3e;
+    --line: #3b2a14;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1d1915;
+      --panel: #2a241e;
+      --text: #f1e8dc;
+      --muted: #b3a48f;
+      --accent: #d29a5c;
+      --accent-text: #1d1915;
+      --border: #463b2f;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: 'Noto Sans KR', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+  }
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 16px; }
+  header { text-align: center; margin-bottom: 12px; }
+  header h1 { margin: 0; font-size: 2rem; letter-spacing: 0.1em; }
+  header p { margin: 4px 0 0; color: var(--muted); }
+
+  .layout { display: flex; gap: 20px; align-items: flex-start; justify-content: center; flex-wrap: wrap; }
+  .board-box { flex: 1 1 520px; max-width: 680px; }
+  canvas {
+    display: block; width: 100%; height: auto;
+    border-radius: 6px;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.25);
+    touch-action: manipulation;
+    cursor: pointer;
+  }
+  .side { flex: 0 1 300px; display: flex; flex-direction: column; gap: 12px; width: 100%; }
+  .card {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 12px; padding: 14px;
+  }
+  .card h2 { margin: 0 0 10px; font-size: 1rem; color: var(--muted); font-weight: 700; }
+  .seg { display: flex; gap: 6px; margin-bottom: 10px; }
+  .seg button { flex: 1; }
+  button {
+    font-family: inherit; font-size: 1.05rem; font-weight: 700;
+    padding: 12px 10px; border-radius: 10px;
+    border: 1px solid var(--border); background: var(--bg); color: var(--text);
+    cursor: pointer;
+  }
+  button:hover:not(:disabled) { border-color: var(--accent); }
+  button.on, button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+  button:disabled { opacity: 0.45; cursor: default; }
+  .btns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .btns .full { grid-column: 1 / -1; }
+
+  .turn { display: flex; align-items: center; gap: 10px; font-size: 1.35rem; font-weight: 700; }
+  .stone-icon { width: 26px; height: 26px; border-radius: 50%; flex-shrink: 0; }
+  .stone-icon.b { background: radial-gradient(circle at 35% 35%, #666, #000); }
+  .stone-icon.w { background: radial-gradient(circle at 35% 35%, #fff, #c8c8c8); border: 1px solid #999; }
+  .caps { display: flex; gap: 10px; margin-top: 12px; }
+  .cap { flex: 1; display: flex; align-items: center; gap: 8px; padding: 8px; border-radius: 8px; background: var(--bg); }
+  .cap .stone-icon { width: 20px; height: 20px; }
+  .cap span { font-size: 0.95rem; }
+  .msg { min-height: 1.5em; margin-top: 10px; color: var(--accent); font-weight: 700; }
+
+  .help { font-size: 0.92rem; color: var(--muted); line-height: 1.6; }
+  .help ul { margin: 0; padding-left: 18px; }
+
+  .modal-bg {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.55);
+    display: none; align-items: center; justify-content: center; padding: 16px; z-index: 10;
+  }
+  .modal-bg.show { display: flex; }
+  .modal { background: var(--panel); color: var(--text); border-radius: 14px; padding: 22px; width: 100%; max-width: 380px; text-align: center; }
+  .modal h3 { margin: 0 0 12px; font-size: 1.6rem; }
+  .modal table { width: 100%; border-collapse: collapse; margin: 10px 0 16px; font-size: 1rem; }
+  .modal th, .modal td { padding: 6px; border-bottom: 1px solid var(--border); }
+  .modal td:first-child { text-align: left; color: var(--muted); }
+  .modal .modal-btns { display: flex; gap: 8px; }
+  .modal .modal-btns button { flex: 1; }
+
+  @media (max-width: 860px) {
+    .side { flex-basis: 100%; max-width: 680px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>바둑</h1>
+    <p>돌을 놓을 자리를 눌러 주세요</p>
+  </header>
+
+  <div class="layout">
+    <div class="board-box">
+      <canvas id="board"></canvas>
+    </div>
+
+    <div class="side">
+      <div class="card">
+        <div class="turn" id="turn"><div class="stone-icon b"></div><span>흑 차례</span></div>
+        <div class="caps">
+          <div class="cap"><div class="stone-icon b"></div><span>흑이 딴 돌 <b id="capB">0</b></span></div>
+          <div class="cap"><div class="stone-icon w"></div><span>백이 딴 돌 <b id="capW">0</b></span></div>
+        </div>
+        <div class="msg" id="msg"></div>
+      </div>
+
+      <div class="card" id="playBtns">
+        <div class="btns">
+          <button id="passBtn">한 수 쉼</button>
+          <button id="undoBtn">무르기</button>
+          <button id="resignBtn" class="full">기권</button>
+        </div>
+      </div>
+
+      <div class="card" id="scoreBtns" style="display:none">
+        <h2>계가 (집 세기)</h2>
+        <p class="help" style="margin-top:0">죽은 돌을 눌러 표시하세요. 다시 누르면 취소됩니다.</p>
+        <div class="btns">
+          <button id="countBtn" class="primary full">계산하기</button>
+          <button id="resumeBtn" class="full">대국 계속하기</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>판 크기</h2>
+        <div class="seg" id="sizeSeg">
+          <button data-size="9" class="on">9줄</button>
+          <button data-size="13">13줄</button>
+          <button data-size="19">19줄</button>
+        </div>
+        <h2>상대</h2>
+        <div class="seg" id="modeSeg">
+          <button data-mode="pvp" class="on">두 사람</button>
+          <button data-mode="cpu">컴퓨터</button>
+        </div>
+        <button id="newBtn" class="primary" style="width:100%">새 대국</button>
+      </div>
+
+      <div class="card help">
+        <ul>
+          <li>흑이 먼저 둡니다. 덤은 6.5집입니다.</li>
+          <li>컴퓨터와 둘 때는 내가 흑입니다.</li>
+          <li>두 사람이 연달아 '한 수 쉼'을 하면 계가합니다.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="modalBg">
+  <div class="modal">
+    <h3 id="resultTitle"></h3>
+    <div id="resultBody"></div>
+    <div class="modal-btns">
+      <button id="closeModal">닫기</button>
+      <button id="modalNew" class="primary">새 대국</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const EMPTY = 0, BLACK = 1, WHITE = 2;
+const KOMI = 6.5;
+const other = c => 3 - c;
+const NAME = { 1: '흑', 2: '백' };
+
+let N = 9, NB = [];
+let board, turn, caps, ko, history, last, passes, phase, dead;
+let mode = 'pvp';
+const cpuColor = WHITE;
+let cpuTimer = null;
+let hover = -1;
+
+const canvas = document.getElementById('board');
+const ctx = canvas.getContext('2d');
+const $ = id => document.getElementById(id);
+
+// ---------- 규칙 ----------
+function buildNeighbors() {
+  NB = [];
+  for (let i = 0; i < N * N; i++) {
+    const x = i % N, y = (i / N) | 0, r = [];
+    if (x > 0) r.push(i - 1);
+    if (x < N - 1) r.push(i + 1);
+    if (y > 0) r.push(i - N);
+    if (y < N - 1) r.push(i + N);
+    NB.push(r);
+  }
+}
+
+function group(b, i) {
+  const c = b[i], stones = [i], libs = new Set(), seen = new Uint8Array(N * N);
+  seen[i] = 1;
+  for (let k = 0; k < stones.length; k++) {
+    for (const n of NB[stones[k]]) {
+      if (b[n] === EMPTY) libs.add(n);
+      else if (b[n] === c && !seen[n]) { seen[n] = 1; stones.push(n); }
+    }
+  }
+  return { stones, libs };
+}
+
+// 착수 시도: 불가능하면 { error } 반환
+function tryPlay(b, i, c, koPt) {
+  if (b[i] !== EMPTY) return { error: 'occupied' };
+  if (i === koPt) return { error: 'ko' };
+  const nb = b.slice();
+  nb[i] = c;
+  const captured = [];
+  for (const n of NB[i]) {
+    if (nb[n] === other(c)) {
+      const g = group(nb, n);
+      if (g.libs.size === 0) for (const s of g.stones) { nb[s] = EMPTY; captured.push(s); }
+    }
+  }
+  const g = group(nb, i);
+  if (g.libs.size === 0) return { error: 'suicide' };
+  const newKo = (captured.length === 1 && g.stones.length === 1 && g.libs.size === 1) ? captured[0] : -1;
+  return { b: nb, captured, ko: newKo, libs: g.libs.size, size: g.stones.length };
+}
+
+// ---------- 게임 진행 ----------
+function newGame() {
+  clearTimeout(cpuTimer);
+  buildNeighbors();
+  board = new Int8Array(N * N);
+  turn = BLACK;
+  caps = { 1: 0, 2: 0 };
+  ko = -1;
+  history = [];
+  last = -1;
+  passes = 0;
+  phase = 'play';
+  dead = new Set();
+  hover = -1;
+  setMsg('');
+  closeModal();
+  resize();
+  updateUI();
+}
+
+function snapshot() {
+  history.push({ board: board.slice(), turn, caps: { ...caps }, ko, last, passes });
+}
+
+function restore(s) {
+  board = s.board; turn = s.turn; caps = s.caps; ko = s.ko; last = s.last; passes = s.passes;
+}
+
+function placeStone(i) {
+  const r = tryPlay(board, i, turn, ko);
+  if (r.error) {
+    if (r.error === 'ko') setMsg('패입니다. 다른 곳에 한 수 둔 뒤 따낼 수 있습니다.');
+    else if (r.error === 'suicide') setMsg('그 자리는 둘 수 없습니다 (착수 금지).');
+    return false;
+  }
+  snapshot();
+  board = r.b;
+  caps[turn] += r.captured.length;
+  ko = r.ko;
+  last = i;
+  passes = 0;
+  turn = other(turn);
+  playSound(r.captured.length > 0);
+  setMsg(r.captured.length ? `${NAME[other(turn)]}이 돌 ${r.captured.length}개를 땄습니다.` : '');
+  afterMove();
+  return true;
+}
+
+function pass() {
+  snapshot();
+  passes++;
+  ko = -1;
+  last = -1;
+  setMsg(`${NAME[turn]}이 한 수 쉬었습니다.`);
+  turn = other(turn);
+  if (passes >= 2) { startScoring(); return; }
+  afterMove();
+}
+
+function afterMove() {
+  updateUI();
+  draw();
+  if (mode === 'cpu' && phase === 'play' && turn === cpuColor) {
+    cpuTimer = setTimeout(cpuMove, 450);
+  }
+}
+
+function undo() {
+  if (!history.length) return;
+  clearTimeout(cpuTimer);
+  restore(history.pop());
+  while (mode === 'cpu' && turn === cpuColor && history.length) restore(history.pop());
+  phase = 'play';
+  dead.clear();
+  setMsg('한 수 물렀습니다.');
+  updateUI();
+  draw();
+}
+
+function resign() {
+  if (phase !== 'play') return;
+  const loser = (mode === 'cpu') ? BLACK : turn;
+  if (!confirm(`${NAME[loser]}이 기권하시겠습니까?`)) return;
+  clearTimeout(cpuTimer);
+  phase = 'over';
+  updateUI();
+  draw();
+  showModal(`${NAME[other(loser)]} 불계승`, `<p>${NAME[loser]}이 기권했습니다.</p>`);
+}
+
+// ---------- 계가 ----------
+function startScoring() {
+  clearTimeout(cpuTimer);
+  phase = 'score';
+  dead = new Set();
+  setMsg('두 사람 모두 쉬었습니다. 죽은 돌을 표시해 주세요.');
+  updateUI();
+  draw();
+}
+
+function toggleDead(i) {
+  if (board[i] === EMPTY) return;
+  const g = group(board, i);
+  const isDead = dead.has(i);
+  for (const s of g.stones) isDead ? dead.delete(s) : dead.add(s);
+  draw();
+}
+
+function evaluate() {
+  const b = board.slice();
+  let deadB = 0, deadW = 0;
+  for (const i of dead) {
+    if (b[i] === BLACK) deadB++;
+    else if (b[i] === WHITE) deadW++;
+    b[i] = EMPTY;
+  }
+  const owner = new Int8Array(N * N);
+  const seen = new Uint8Array(N * N);
+  const terr = { 1: 0, 2: 0 };
+  for (let i = 0; i < N * N; i++) {
+    if (b[i] !== EMPTY || seen[i]) continue;
+    const region = [i], border = new Set();
+    seen[i] = 1;
+    for (let k = 0; k < region.length; k++) {
+      for (const n of NB[region[k]]) {
+        if (b[n] === EMPTY) { if (!seen[n]) { seen[n] = 1; region.push(n); } }
+        else border.add(b[n]);
+      }
+    }
+    if (border.size === 1) {
+      const c = [...border][0];
+      for (const p of region) owner[p] = c;
+      terr[c] += region.length;
+    }
+  }
+  const black = terr[1] + caps[1] + deadW;
+  const white = terr[2] + caps[2] + deadB + KOMI;
+  return { owner, terr, deadB, deadW, black, white };
+}
+
+function finishCount() {
+  const e = evaluate();
+  phase = 'over';
+  updateUI();
+  draw();
+  const diff = Math.abs(e.black - e.white);
+  const winner = e.black > e.white ? '흑' : '백';
+  showModal(`${winner} ${diff}집 승`, `
+    <table>
+      <tr><th></th><th>흑</th><th>백</th></tr>
+      <tr><td>집</td><td>${e.terr[1]}</td><td>${e.terr[2]}</td></tr>
+      <tr><td>따낸 돌</td><td>${caps[1]}</td><td>${caps[2]}</td></tr>
+      <tr><td>사석</td><td>${e.deadW}</td><td>${e.deadB}</td></tr>
+      <tr><td>덤</td><td>-</td><td>${KOMI}</td></tr>
+      <tr><th>합계</th><th>${e.black}</th><th>${e.white}</th></tr>
+    </table>`);
+}
+
+function resumePlay() {
+  phase = 'play';
+  passes = 0;
+  dead.clear();
+  setMsg('대국을 계속합니다.');
+  afterMove();
+}
+
+// ---------- 컴퓨터 ----------
+function isOwnEye(b, i, c) {
+  for (const n of NB[i]) if (b[n] !== c) return false;
+  const x = i % N, y = (i / N) | 0;
+  let bad = 0, offBoard = 0;
+  for (const [dx, dy] of [[-1,-1],[1,-1],[-1,1],[1,1]]) {
+    const nx = x + dx, ny = y + dy;
+    if (nx < 0 || ny < 0 || nx >= N || ny >= N) { offBoard++; continue; }
+    if (b[ny * N + nx] === other(c)) bad++;
+  }
+  return offBoard > 0 ? bad === 0 : bad <= 1;
+}
+
+function cpuMove() {
+  if (phase !== 'play' || turn !== cpuColor) return;
+  const c = turn, opp = other(c);
+  let stoneCount = 0;
+  for (let i = 0; i < N * N; i++) if (board[i]) stoneCount++;
+  const early = stoneCount < N * N * 0.15;
+
+  let best = -1, bestS = -Infinity;
+  for (let i = 0; i < N * N; i++) {
+    if (board[i] !== EMPTY || isOwnEye(board, i, c)) continue;
+    const r = tryPlay(board, i, c, ko);
+    if (r.error) continue;
+    let s = Math.random() * 0.8;
+
+    // 따내기
+    s += r.captured.length * 6;
+
+    // 단수에 걸린 내 돌 살리기
+    const seenOwn = new Set();
+    for (const n of NB[i]) {
+      if (board[n] !== c || seenOwn.has(n)) continue;
+      const g = group(board, n);
+      g.stones.forEach(t => seenOwn.add(t));
+      if (g.libs.size === 1 && r.libs >= 2) s += 5 + g.stones.length * 3;
+    }
+
+    // 스스로 단수 피하기
+    if (r.libs === 1 && r.captured.length === 0) s -= 4 + r.size * 3;
+    else if (r.libs === 2) s -= 0.5;
+
+    // 상대 돌 공격
+    const seenOpp = new Set();
+    for (const n of NB[i]) {
+      if (r.b[n] !== opp || seenOpp.has(n)) continue;
+      const g = group(r.b, n);
+      g.stones.forEach(t => seenOpp.add(t));
+      if (g.libs.size === 1) s += 3 + g.stones.length * 2;
+      else if (g.libs.size === 2) s += 0.8;
+    }
+
+    // 위치 점수
+    const x = i % N, y = (i / N) | 0;
+    const d = Math.min(x, y, N - 1 - x, N - 1 - y);
+    if (d === 0) s -= 2;
+    else if (d === 1) s -= early ? 1 : 0.3;
+    else if (d === 2 || d === 3) s += early ? 1.5 : 0.3;
+
+    // 근처에 돌이 있으면 가산
+    let near = 0;
+    for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
+      if (Math.abs(dx) + Math.abs(dy) > 2) continue;
+      const nx = x + dx, ny = y + dy;
+      if (nx >= 0 && ny >= 0 && nx < N && ny < N && board[ny * N + nx]) near++;
+    }
+    if (near > 0) s += 0.6;
+    else if (stoneCount > 4) s -= 0.3;
+
+    if (s > bestS) { bestS = s; best = i; }
+  }
+
+  if (best < 0 || bestS < -1.5 || (passes > 0 && bestS < 2.5)) pass();
+  else placeStone(best);
+}
+
+// ---------- 그리기 ----------
+let size = 600, cell = 60, pad = 60;
+const dpr = () => window.devicePixelRatio || 1;
+
+function resize() {
+  const w = canvas.parentElement.clientWidth;
+  size = Math.max(260, Math.min(w, 680));
+  canvas.width = size * dpr();
+  canvas.height = size * dpr();
+  canvas.style.height = size + 'px';
+  ctx.setTransform(dpr(), 0, 0, dpr(), 0, 0);
+  cell = size / (N + 1);
+  pad = cell;
+  draw();
+}
+
+const px = i => pad + (i % N) * cell;
+const py = i => pad + ((i / N) | 0) * cell;
+
+function starPoints() {
+  if (N === 9) return [[2,2],[6,2],[2,6],[6,6],[4,4]];
+  if (N === 13) return [[3,3],[9,3],[3,9],[9,9],[6,6]];
+  const a = [3, 9, 15], r = [];
+  for (const x of a) for (const y of a) r.push([x, y]);
+  return r;
+}
+
+function drawStone(x, y, c, alpha = 1) {
+  const r = cell * 0.47;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  if (alpha === 1) {
+    ctx.shadowColor = 'rgba(0,0,0,0.35)';
+    ctx.shadowBlur = cell * 0.12;
+    ctx.shadowOffsetX = cell * 0.04;
+    ctx.shadowOffsetY = cell * 0.06;
+  }
+  const g = ctx.createRadialGradient(x - r * 0.35, y - r * 0.35, r * 0.1, x, y, r);
+  if (c === BLACK) { g.addColorStop(0, '#666'); g.addColorStop(1, '#0a0a0a'); }
+  else { g.addColorStop(0, '#ffffff'); g.addColorStop(1, '#c9c9c9'); }
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+function draw() {
+  if (!board) return;
+  // 바둑판
+  const wood = ctx.createLinearGradient(0, 0, size, size);
+  wood.addColorStop(0, '#e3bd6a');
+  wood.addColorStop(1, '#cf9f45');
+  ctx.fillStyle = wood;
+  ctx.fillRect(0, 0, size, size);
+
+  ctx.strokeStyle = '#3b2a14';
+  ctx.lineWidth = Math.max(1, size / 600);
+  ctx.beginPath();
+  for (let k = 0; k < N; k++) {
+    const p = pad + k * cell;
+    ctx.moveTo(pad, p); ctx.lineTo(pad + (N - 1) * cell, p);
+    ctx.moveTo(p, pad); ctx.lineTo(p, pad + (N - 1) * cell);
+  }
+  ctx.stroke();
+  ctx.lineWidth = Math.max(2, size / 300);
+  ctx.strokeRect(pad, pad, (N - 1) * cell, (N - 1) * cell);
+
+  ctx.fillStyle = '#3b2a14';
+  for (const [x, y] of starPoints()) {
+    ctx.beginPath();
+    ctx.arc(pad + x * cell, pad + y * cell, Math.max(2.5, cell * 0.1), 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // 계가 표시
+  const ev = (phase === 'score' || phase === 'over') && dead ? evaluate() : null;
+
+  for (let i = 0; i < N * N; i++) {
+    if (!board[i]) continue;
+    const isDead = ev && dead.has(i);
+    drawStone(px(i), py(i), board[i], isDead ? 0.4 : 1);
+    if (isDead) {
+      const s = cell * 0.2;
+      ctx.strokeStyle = '#d33';
+      ctx.lineWidth = Math.max(2, cell * 0.07);
+      ctx.beginPath();
+      ctx.moveTo(px(i) - s, py(i) - s); ctx.lineTo(px(i) + s, py(i) + s);
+      ctx.moveTo(px(i) + s, py(i) - s); ctx.lineTo(px(i) - s, py(i) + s);
+      ctx.stroke();
+    }
+  }
+
+  if (ev) {
+    for (let i = 0; i < N * N; i++) {
+      if (!ev.owner[i]) continue;
+      const s = cell * 0.28;
+      ctx.fillStyle = ev.owner[i] === BLACK ? '#111' : '#fff';
+      ctx.strokeStyle = '#555';
+      ctx.lineWidth = 1;
+      ctx.fillRect(px(i) - s / 2, py(i) - s / 2, s, s);
+      ctx.strokeRect(px(i) - s / 2, py(i) - s / 2, s, s);
+    }
+  }
+
+  // 마지막 수 표시
+  if (last >= 0 && board[last]) {
+    ctx.strokeStyle = board[last] === BLACK ? '#fff' : '#000';
+    ctx.lineWidth = Math.max(2, cell * 0.07);
+    ctx.beginPath();
+    ctx.arc(px(last), py(last), cell * 0.2, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  // 마우스 위치 미리보기
+  if (phase === 'play' && hover >= 0 && board[hover] === EMPTY && !(mode === 'cpu' && turn === cpuColor)) {
+    drawStone(px(hover), py(hover), turn, 0.4);
+  }
+}
+
+function pointFromEvent(e) {
+  const rect = canvas.getBoundingClientRect();
+  const x = (e.clientX - rect.left) * (size / rect.width);
+  const y = (e.clientY - rect.top) * (size / rect.height);
+  const cx = Math.round((x - pad) / cell), cy = Math.round((y - pad) / cell);
+  if (cx < 0 || cy < 0 || cx >= N || cy >= N) return -1;
+  if (Math.hypot(x - (pad + cx * cell), y - (pad + cy * cell)) > cell * 0.55) return -1;
+  return cy * N + cx;
+}
+
+canvas.addEventListener('click', e => {
+  const i = pointFromEvent(e);
+  if (i < 0) return;
+  if (phase === 'score') { toggleDead(i); return; }
+  if (phase !== 'play') return;
+  if (mode === 'cpu' && turn === cpuColor) return;
+  placeStone(i);
+});
+canvas.addEventListener('mousemove', e => {
+  const i = pointFromEvent(e);
+  if (i !== hover) { hover = i; draw(); }
+});
+canvas.addEventListener('mouseleave', () => { hover = -1; draw(); });
+
+// ---------- 소리 ----------
+let audioCtx = null;
+function playSound(capture) {
+  try {
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    const len = Math.floor(audioCtx.sampleRate * 0.06);
+    const buf = audioCtx.createBuffer(1, len, audioCtx.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let k = 0; k < len; k++) data[k] = (Math.random() * 2 - 1) * Math.pow(1 - k / len, 6);
+    const src = audioCtx.createBufferSource();
+    src.buffer = buf;
+    const filter = audioCtx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.value = capture ? 1400 : 2200;
+    const gain = audioCtx.createGain();
+    gain.gain.value = 0.9;
+    src.connect(filter).connect(gain).connect(audioCtx.destination);
+    src.start();
+  } catch (e) { /* 소리를 지원하지 않는 환경 */ }
+}
+
+// ---------- 화면 ----------
+function setMsg(t) { $('msg').textContent = t; }
+
+function updateUI() {
+  const t = $('turn');
+  if (phase === 'play') {
+    const who = mode === 'cpu' ? (turn === cpuColor ? ' (컴퓨터 생각 중…)' : ' (나)') : '';
+    t.innerHTML = `<div class="stone-icon ${turn === BLACK ? 'b' : 'w'}"></div><span>${NAME[turn]} 차례${who}</span>`;
+  } else if (phase === 'score') {
+    t.innerHTML = '<span>계가 중</span>';
+  } else {
+    t.innerHTML = '<span>대국 종료</span>';
+  }
+  $('capB').textContent = caps[1];
+  $('capW').textContent = caps[2];
+  const cpuThinking = mode === 'cpu' && turn === cpuColor && phase === 'play';
+  $('playBtns').style.display = phase === 'score' ? 'none' : '';
+  $('scoreBtns').style.display = phase === 'score' ? '' : 'none';
+  $('passBtn').disabled = phase !== 'play' || cpuThinking;
+  $('resignBtn').disabled = phase !== 'play' || cpuThinking;
+  $('undoBtn').disabled = !history.length || cpuThinking;
+}
+
+function showModal(title, body) {
+  $('resultTitle').textContent = title;
+  $('resultBody').innerHTML = body;
+  $('modalBg').classList.add('show');
+}
+function closeModal() { $('modalBg').classList.remove('show'); }
+
+function confirmRestart() {
+  return !(history.length && phase === 'play') || confirm('지금 대국을 끝내고 새로 시작할까요?');
+}
+
+$('sizeSeg').addEventListener('click', e => {
+  const b = e.target.closest('button');
+  if (!b || +b.dataset.size === N || !confirmRestart()) return;
+  N = +b.dataset.size;
+  document.querySelectorAll('#sizeSeg button').forEach(x => x.classList.toggle('on', x === b));
+  newGame();
+});
+$('modeSeg').addEventListener('click', e => {
+  const b = e.target.closest('button');
+  if (!b || b.dataset.mode === mode || !confirmRestart()) return;
+  mode = b.dataset.mode;
+  document.querySelectorAll('#modeSeg button').forEach(x => x.classList.toggle('on', x === b));
+  newGame();
+});
+$('newBtn').onclick = () => { if (confirmRestart()) newGame(); };
+$('passBtn').onclick = pass;
+$('undoBtn').onclick = undo;
+$('resignBtn').onclick = resign;
+$('countBtn').onclick = finishCount;
+$('resumeBtn').onclick = resumePlay;
+$('closeModal').onclick = closeModal;
+$('modalNew').onclick = newGame;
+window.addEventListener('resize', resize);
+
+newGame();
+</script>
+</body>
+</html>
