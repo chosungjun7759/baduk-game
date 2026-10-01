@@ -154,6 +154,11 @@
           <button data-mode="pvp" class="on">두 사람</button>
           <button data-mode="cpu">컴퓨터</button>
         </div>
+        <h2>효과</h2>
+        <div class="seg">
+          <button id="soundBtn">소리 켜짐</button>
+          <button id="vibeBtn">진동 켜짐</button>
+        </div>
         <button id="newBtn" class="primary" style="width:100%">새 대국</button>
       </div>
 
@@ -282,7 +287,7 @@ function placeStone(i) {
   last = i;
   passes = 0;
   turn = other(turn);
-  playSound(r.captured.length > 0);
+  playSound(r.captured.length);
   setMsg(r.captured.length ? `${NAME[other(turn)]}이 돌 ${r.captured.length}개를 땄습니다.` : '');
   afterMove();
   return true;
@@ -627,25 +632,86 @@ canvas.addEventListener('mousemove', e => {
 });
 canvas.addEventListener('mouseleave', () => { hover = -1; draw(); });
 
-// ---------- 소리 ----------
+// ---------- 소리 · 진동 ----------
+const settings = { sound: true, vibe: true };
+try { Object.assign(settings, JSON.parse(localStorage.getItem('baduk-settings') || '{}')); } catch (e) {}
+function saveSettings() { try { localStorage.setItem('baduk-settings', JSON.stringify(settings)); } catch (e) {} }
+
 let audioCtx = null;
-function playSound(capture) {
-  try {
-    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
-    const len = Math.floor(audioCtx.sampleRate * 0.06);
-    const buf = audioCtx.createBuffer(1, len, audioCtx.sampleRate);
-    const data = buf.getChannelData(0);
-    for (let k = 0; k < len; k++) data[k] = (Math.random() * 2 - 1) * Math.pow(1 - k / len, 6);
-    const src = audioCtx.createBufferSource();
+function getAudio() {
+  audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  return audioCtx;
+}
+
+// 돌이 바둑판에 "딱" 부딪히는 소리: 짧은 타격음 + 나무판 울림
+function stoneClick(ac, t, vol) {
+  // 타격음 (높은 잡음)
+  const len = Math.floor(ac.sampleRate * 0.025);
+  const buf = ac.createBuffer(1, len, ac.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let k = 0; k < len; k++) d[k] = (Math.random() * 2 - 1) * Math.pow(1 - k / len, 4);
+  const noise = ac.createBufferSource();
+  noise.buffer = buf;
+  const hp = ac.createBiquadFilter();
+  hp.type = 'bandpass';
+  hp.frequency.value = 3200 + Math.random() * 600;
+  hp.Q.value = 1.2;
+  const ng = ac.createGain();
+  ng.gain.value = 1.4 * vol;
+  noise.connect(hp).connect(ng).connect(ac.destination);
+  noise.start(t);
+
+  // 나무판 울림 (낮은 톤이 빠르게 사라짐)
+  for (const [f, v, dur] of [[190, 0.9, 0.12], [420, 0.45, 0.07], [1250, 0.25, 0.04]]) {
+    const o = ac.createOscillator();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(f * (1 + Math.random() * 0.04), t);
+    o.frequency.exponentialRampToValueAtTime(f * 0.85, t + dur);
+    const g = ac.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(v * vol, t + 0.002);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g).connect(ac.destination);
+    o.start(t);
+    o.stop(t + dur + 0.02);
+  }
+}
+
+// 따낸 돌을 집어 드는 "달그락" 소리: 작은 돌끼리 부딪히는 소리 여러 번
+function stoneClatter(ac, t, count) {
+  const n = Math.min(2 + count, 6);
+  for (let k = 0; k < n; k++) {
+    const tt = t + 0.12 + k * (0.045 + Math.random() * 0.04);
+    const len = Math.floor(ac.sampleRate * 0.012);
+    const buf = ac.createBuffer(1, len, ac.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let j = 0; j < len; j++) d[j] = (Math.random() * 2 - 1) * Math.pow(1 - j / len, 3);
+    const src = ac.createBufferSource();
     src.buffer = buf;
-    const filter = audioCtx.createBiquadFilter();
-    filter.type = 'bandpass';
-    filter.frequency.value = capture ? 1400 : 2200;
-    const gain = audioCtx.createGain();
-    gain.gain.value = 0.9;
-    src.connect(filter).connect(gain).connect(audioCtx.destination);
-    src.start();
-  } catch (e) { /* 소리를 지원하지 않는 환경 */ }
+    const bp = ac.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = 4500 + Math.random() * 2000;
+    bp.Q.value = 3;
+    const g = ac.createGain();
+    g.gain.value = 0.5 + Math.random() * 0.3;
+    src.connect(bp).connect(g).connect(ac.destination);
+    src.start(tt);
+  }
+}
+
+function playSound(captured) {
+  if (settings.sound) {
+    try {
+      const ac = getAudio();
+      const t = ac.currentTime + 0.005;
+      stoneClick(ac, t, 1);
+      if (captured > 0) stoneClatter(ac, t, captured);
+    } catch (e) { /* 소리를 지원하지 않는 환경 */ }
+  }
+  if (settings.vibe && navigator.vibrate) {
+    navigator.vibrate(captured > 0 ? [35, 60, 20, 40, 20] : 30);
+  }
 }
 
 // ---------- 화면 ----------
@@ -704,6 +770,16 @@ $('countBtn').onclick = finishCount;
 $('resumeBtn').onclick = resumePlay;
 $('closeModal').onclick = closeModal;
 $('modalNew').onclick = newGame;
+function updateFx() {
+  $('soundBtn').textContent = settings.sound ? '🔊 소리 켜짐' : '🔇 소리 꺼짐';
+  $('soundBtn').classList.toggle('on', settings.sound);
+  $('vibeBtn').textContent = settings.vibe ? '📳 진동 켜짐' : '진동 꺼짐';
+  $('vibeBtn').classList.toggle('on', settings.vibe);
+  if (!navigator.vibrate) { $('vibeBtn').disabled = true; $('vibeBtn').title = '이 기기는 진동을 지원하지 않습니다'; }
+}
+$('soundBtn').onclick = () => { settings.sound = !settings.sound; saveSettings(); updateFx(); if (settings.sound) playSound(0); };
+$('vibeBtn').onclick = () => { settings.vibe = !settings.vibe; saveSettings(); updateFx(); if (settings.vibe && navigator.vibrate) navigator.vibrate(30); };
+updateFx();
 window.addEventListener('resize', resize);
 
 newGame();
