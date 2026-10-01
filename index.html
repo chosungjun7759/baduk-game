@@ -2,7 +2,12 @@
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="바둑">
+<meta name="theme-color" content="#f4efe6">
 <title>바둑 게임</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700&display=swap" rel="stylesheet">
@@ -30,29 +35,51 @@
       --border: #463b2f;
     }
   }
-  * { box-sizing: border-box; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { overscroll-behavior: none; }
   body {
     margin: 0;
     font-family: 'Noto Sans KR', sans-serif;
     background: var(--bg);
     color: var(--text);
     min-height: 100vh;
+    min-height: 100dvh;
+    -webkit-user-select: none; user-select: none;
+    -webkit-touch-callout: none;
+    touch-action: manipulation;
   }
-  .wrap { max-width: 1040px; margin: 0 auto; padding: 16px; }
-  header { text-align: center; margin-bottom: 12px; }
-  header h1 { margin: 0; font-size: 2rem; letter-spacing: 0.1em; }
-  header p { margin: 4px 0 0; color: var(--muted); }
+  .wrap {
+    margin: 0 auto;
+    padding: max(12px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
+             max(12px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+  }
+  header { text-align: center; margin-bottom: 10px; }
+  header h1 { margin: 0; font-size: 1.6rem; letter-spacing: 0.15em; }
 
-  .layout { display: flex; gap: 20px; align-items: flex-start; justify-content: center; flex-wrap: wrap; }
-  .board-box { flex: 1 1 520px; max-width: 680px; }
+  /* 세로 화면: 바둑판 위, 메뉴 아래 */
+  .layout { display: flex; flex-direction: column; gap: 14px; align-items: center; }
+  .board-box { width: 100%; display: flex; justify-content: center; }
   canvas {
-    display: block; width: 100%; height: auto;
+    display: block;
     border-radius: 6px;
     box-shadow: 0 6px 18px rgba(0,0,0,0.25);
-    touch-action: manipulation;
+    touch-action: none;
     cursor: pointer;
   }
-  .side { flex: 0 1 300px; display: flex; flex-direction: column; gap: 12px; width: 100%; }
+  .side { width: 100%; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-content: start; }
+
+  /* 가로 화면 (아이패드 가로 등): 바둑판 왼쪽, 메뉴 오른쪽 */
+  @media (orientation: landscape) and (min-width: 900px) {
+    header { display: none; }
+    .layout { flex-direction: row; align-items: flex-start; justify-content: center; gap: 20px; }
+    .board-box { width: auto; flex: 1 1 auto; min-width: 0; }
+    .side {
+      flex: 0 0 340px; display: flex; flex-direction: column;
+      overflow-y: auto; -webkit-overflow-scrolling: touch;
+    }
+    .side-title { display: block !important; }
+  }
+  .side-title { display: none; margin: 0; font-size: 1.6rem; letter-spacing: 0.15em; text-align: center; }
   .card {
     background: var(--panel); border: 1px solid var(--border);
     border-radius: 12px; padding: 14px;
@@ -62,11 +89,12 @@
   .seg button { flex: 1; }
   button {
     font-family: inherit; font-size: 1.05rem; font-weight: 700;
-    padding: 12px 10px; border-radius: 10px;
+    padding: 12px 10px; border-radius: 10px; min-height: 54px;
     border: 1px solid var(--border); background: var(--bg); color: var(--text);
     cursor: pointer;
   }
-  button:hover:not(:disabled) { border-color: var(--accent); }
+  @media (hover: hover) { button:hover:not(:disabled) { border-color: var(--accent); } }
+  button:active:not(:disabled) { transform: scale(0.97); }
   button.on, button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
   button:disabled { opacity: 0.45; cursor: default; }
   .btns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
@@ -98,24 +126,22 @@
   .modal .modal-btns { display: flex; gap: 8px; }
   .modal .modal-btns button { flex: 1; }
 
-  @media (max-width: 860px) {
-    .side { flex-basis: 100%; max-width: 680px; }
+  @media (max-width: 600px) {
+    .side { grid-template-columns: 1fr; }
   }
 </style>
 </head>
 <body>
 <div class="wrap">
-  <header>
-    <h1>바둑</h1>
-    <p>돌을 놓을 자리를 눌러 주세요</p>
-  </header>
+  <header><h1>바둑</h1></header>
 
   <div class="layout">
     <div class="board-box">
       <canvas id="board"></canvas>
     </div>
 
-    <div class="side">
+    <div class="side" id="side">
+      <h1 class="side-title">바둑</h1>
       <div class="card">
         <div class="turn" id="turn"><div class="stone-icon b"></div><span>흑 차례</span></div>
         <div class="caps">
@@ -159,6 +185,9 @@
           <button id="soundBtn">소리 켜짐</button>
           <button id="vibeBtn">진동 켜짐</button>
         </div>
+        <div class="seg">
+          <button id="confirmBtn">두 번 눌러 두기</button>
+        </div>
         <button id="newBtn" class="primary" style="width:100%">새 대국</button>
       </div>
 
@@ -167,6 +196,7 @@
           <li>흑이 먼저 둡니다. 덤은 6.5집입니다.</li>
           <li>컴퓨터와 둘 때는 내가 흑입니다.</li>
           <li>두 사람이 연달아 '한 수 쉼'을 하면 계가합니다.</li>
+          <li>'두 번 눌러 두기'를 켜면 처음 누른 곳에 돌이 흐리게 보이고, 같은 곳을 한 번 더 누르면 놓입니다.</li>
         </ul>
       </div>
     </div>
@@ -196,6 +226,7 @@ let mode = 'pvp';
 const cpuColor = WHITE;
 let cpuTimer = null;
 let hover = -1;
+let pending = -1; // '두 번 눌러 두기'에서 첫 번째로 누른 자리
 
 const canvas = document.getElementById('board');
 const ctx = canvas.getContext('2d');
@@ -259,6 +290,7 @@ function newGame() {
   phase = 'play';
   dead = new Set();
   hover = -1;
+  pending = -1;
   setMsg('');
   closeModal();
   resize();
@@ -305,6 +337,7 @@ function pass() {
 }
 
 function afterMove() {
+  pending = -1;
   updateUI();
   draw();
   if (mode === 'cpu' && phase === 'play' && turn === cpuColor) {
@@ -315,6 +348,7 @@ function afterMove() {
 function undo() {
   if (!history.length) return;
   clearTimeout(cpuTimer);
+  pending = -1;
   restore(history.pop());
   while (mode === 'cpu' && turn === cpuColor && history.length) restore(history.pop());
   phase = 'play';
@@ -493,14 +527,28 @@ let size = 600, cell = 60, pad = 60;
 const dpr = () => window.devicePixelRatio || 1;
 
 function resize() {
-  const w = canvas.parentElement.clientWidth;
-  size = Math.max(260, Math.min(w, 680));
+  const box = canvas.parentElement;
+  const landscape = matchMedia('(orientation: landscape) and (min-width: 900px)').matches;
+  const vh = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+  const top = box.getBoundingClientRect().top + window.scrollY;
+  const w = box.clientWidth;
+  let s;
+  if (landscape) {
+    // 가로: 화면 높이를 꽉 채우는 정사각형 바둑판
+    s = Math.min(w, vh - top - 16);
+  } else {
+    // 세로: 폭을 꽉 채우되, 아래 차례 표시와 버튼이 보일 만큼 남김
+    s = Math.min(w, Math.max(320, vh - top - 240));
+  }
+  size = Math.floor(Math.max(260, Math.min(s, 1100)));
   canvas.width = size * dpr();
   canvas.height = size * dpr();
+  canvas.style.width = size + 'px';
   canvas.style.height = size + 'px';
+  $('side').style.maxHeight = landscape ? size + 'px' : '';
   ctx.setTransform(dpr(), 0, 0, dpr(), 0, 0);
-  cell = size / (N + 1);
-  pad = cell;
+  cell = size / (N - 1 + 1.5);
+  pad = cell * 0.75;
   draw();
 }
 
@@ -602,8 +650,20 @@ function draw() {
     ctx.stroke();
   }
 
-  // 마우스 위치 미리보기
-  if (phase === 'play' && hover >= 0 && board[hover] === EMPTY && !(mode === 'cpu' && turn === cpuColor)) {
+  // '두 번 눌러 두기' 첫 번째 누른 자리
+  if (phase === 'play' && pending >= 0 && board[pending] === EMPTY) {
+    drawStone(px(pending), py(pending), turn, 0.6);
+    ctx.save();
+    ctx.strokeStyle = '#c0392b';
+    ctx.lineWidth = Math.max(2, cell * 0.08);
+    ctx.setLineDash([cell * 0.15, cell * 0.1]);
+    ctx.beginPath();
+    ctx.arc(px(pending), py(pending), cell * 0.5, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+  // 마우스 위치 미리보기 (마우스를 쓸 때만)
+  else if (phase === 'play' && hover >= 0 && board[hover] === EMPTY && !(mode === 'cpu' && turn === cpuColor)) {
     drawStone(px(hover), py(hover), turn, 0.4);
   }
 }
@@ -624,16 +684,25 @@ canvas.addEventListener('click', e => {
   if (phase === 'score') { toggleDead(i); return; }
   if (phase !== 'play') return;
   if (mode === 'cpu' && turn === cpuColor) return;
+  if (settings.confirm && pending !== i) {
+    if (board[i] !== EMPTY) return;
+    pending = i;
+    setMsg('같은 곳을 한 번 더 누르면 돌이 놓입니다.');
+    draw();
+    return;
+  }
+  pending = -1;
   placeStone(i);
 });
-canvas.addEventListener('mousemove', e => {
+canvas.addEventListener('pointermove', e => {
+  if (e.pointerType !== 'mouse') return;
   const i = pointFromEvent(e);
   if (i !== hover) { hover = i; draw(); }
 });
 canvas.addEventListener('mouseleave', () => { hover = -1; draw(); });
 
 // ---------- 소리 · 진동 ----------
-const settings = { sound: true, vibe: true };
+const settings = { sound: true, vibe: true, confirm: matchMedia('(pointer: coarse)').matches };
 try { Object.assign(settings, JSON.parse(localStorage.getItem('baduk-settings') || '{}')); } catch (e) {}
 function saveSettings() { try { localStorage.setItem('baduk-settings', JSON.stringify(settings)); } catch (e) {} }
 
@@ -775,12 +844,18 @@ function updateFx() {
   $('soundBtn').classList.toggle('on', settings.sound);
   $('vibeBtn').textContent = settings.vibe ? '📳 진동 켜짐' : '진동 꺼짐';
   $('vibeBtn').classList.toggle('on', settings.vibe);
-  if (!navigator.vibrate) { $('vibeBtn').disabled = true; $('vibeBtn').title = '이 기기는 진동을 지원하지 않습니다'; }
+  if (!navigator.vibrate) $('vibeBtn').style.display = 'none'; // 아이패드·아이폰은 진동 미지원
+  $('confirmBtn').textContent = settings.confirm ? '👆👆 두 번 눌러 두기 켜짐' : '👆 한 번 눌러 두기';
+  $('confirmBtn').classList.toggle('on', settings.confirm);
 }
+$('confirmBtn').onclick = () => { settings.confirm = !settings.confirm; pending = -1; saveSettings(); updateFx(); draw(); };
 $('soundBtn').onclick = () => { settings.sound = !settings.sound; saveSettings(); updateFx(); if (settings.sound) playSound(0); };
 $('vibeBtn').onclick = () => { settings.vibe = !settings.vibe; saveSettings(); updateFx(); if (settings.vibe && navigator.vibrate) navigator.vibrate(30); };
 updateFx();
 window.addEventListener('resize', resize);
+window.addEventListener('orientationchange', () => setTimeout(resize, 200));
+if (window.visualViewport) window.visualViewport.addEventListener('resize', resize);
+if (document.fonts) document.fonts.ready.then(resize);
 
 newGame();
 </script>
