@@ -335,6 +335,12 @@ const settings = {
   rule: 'capture', target: 3, size: 9, mode: 'cpu', level: 1,
 };
 try { Object.assign(settings, JSON.parse(localStorage.getItem('baduk-settings') || '{}')); } catch (e) {}
+// 저장된 값이 잘못되어 있으면 기본값으로
+if (!LEVELS[settings.level]) settings.level = 1;
+if (![9, 13, 19].includes(settings.size)) settings.size = 9;
+if (![1, 3, 5].includes(settings.target)) settings.target = 3;
+if (!RULE_DESC[settings.rule]) settings.rule = 'capture';
+if (!['cpu', 'pvp'].includes(settings.mode)) settings.mode = 'cpu';
 function saveSettings() { try { localStorage.setItem('baduk-settings', JSON.stringify(settings)); } catch (e) {} }
 
 let solvedLessons = new Set();
@@ -352,6 +358,7 @@ let pending = -1;   // '두 번 눌러 두기'에서 첫 번째로 누른 자리
 let hintPt = -1;    // 힌트로 보여 주는 자리
 let view = 'game';  // 'game' | 'lesson'
 let savedGame = null;
+let resigned = false; // 기권으로 끝난 대국인지 (무르기 때 구분)
 
 const canvas = $('board');
 const ctx = canvas.getContext('2d');
@@ -427,6 +434,7 @@ function newGame() {
   passes = 0;
   phase = 'play';
   dead = new Set();
+  resigned = false;
   hover = pending = hintPt = -1;
   const who = game.mode === 'cpu' ? `${LEVELS[game.level].name} 컴퓨터와 대국해요.` : '친구와 번갈아 둬요.';
   setMsg(`${who}\n흑이 먼저 둬요!`);
@@ -493,8 +501,7 @@ function pass() {
   passes++;
   ko = -1;
   last = -1;
-  const who = isHuman(turn) ? NAME[turn] : '컴퓨터';
-  setMsg(`${who}가 한 수 쉬었어요.`);
+  setMsg(`${isHuman(turn) ? NAME[turn] + '이' : '컴퓨터가'} 한 수 쉬었어요.`);
   turn = other(turn);
   if (passes >= 2) {
     if (game.rule === 'capture') { endCaptureByPass(); return; }
@@ -515,9 +522,18 @@ function afterMove() {
 }
 
 function undo() {
-  if (!history.length) return;
   clearTimeout(cpuTimer);
   pending = hintPt = -1;
+  if (resigned) {
+    // 기권만 취소하고 둔 수는 그대로
+    resigned = false;
+    phase = 'play';
+    closeModal();
+    setMsg('기권을 취소했어요. 계속 둬요!');
+    afterMove();
+    return;
+  }
+  if (!history.length) return;
   restore(history.pop());
   while (game.mode === 'cpu' && turn === cpuColor && history.length) restore(history.pop());
   phase = 'play';
@@ -534,6 +550,7 @@ function resign() {
   if (!confirm(`${NAME[loser]}이 기권할까요?`)) return;
   clearTimeout(cpuTimer);
   phase = 'over';
+  resigned = true;
   updateUI();
   draw();
   showModal('🏳️', `${NAME[other(loser)]} 승리`, `<p>${NAME[loser]}이 기권했어요.</p>`);
@@ -1022,6 +1039,12 @@ function renderLessonGrid() {
 
 function lessonMsg(t) { $('lessonMsg').textContent = t; }
 
+// 잠시 뒤 실행: 그 사이 다른 문제로 넘어가거나 대국 화면으로 가면 취소
+function lessonLater(fn, ms) {
+  const cur = L;
+  setTimeout(() => { if (L === cur && view === 'lesson') fn(); }, ms);
+}
+
 function lessonSolved() {
   const P = LESSONS[L.idx];
   L.solved = true;
@@ -1048,7 +1071,7 @@ function lessonClick(i) {
       sfxWrong();
       lessonMsg(board[i] ? '돌이 놓인 곳 말고, 빈 자리를 눌러요.' : '그곳은 백 돌과 선으로 바로 이어져 있지 않아요.');
       draw();
-      setTimeout(() => { L.wrongPt = -1; draw(); }, 700);
+      lessonLater(() => { L.wrongPt = -1; draw(); }, 700);
     }
     return;
   }
@@ -1070,7 +1093,7 @@ function lessonClick(i) {
     L.busy = true;
     lessonMsg('좋아요! 백이 어디로 도망갈까요…');
     draw();
-    setTimeout(() => {
+    lessonLater(() => {
       const esc = [...group(board, t).libs][0];
       const w = tryPlay(board, esc, WHITE, -1);
       board = w.b; last = esc;
@@ -1092,7 +1115,7 @@ function lessonClick(i) {
     L.busy = true;
     lessonMsg('좋아요! 백은 어떻게 할까요…');
     draw();
-    setTimeout(() => {
+    lessonLater(() => {
       whiteReply(S.reply, P);
       L.step++;
       L.busy = false;
@@ -1121,7 +1144,7 @@ function lessonWrong(r, i, P) {
   const w = typeof P.wrong === 'string' ? P.wrong : P.wrong && P.wrong[`${x},${y}`];
   lessonMsg(w || '아쉬워요! 다시 생각해 봐요. 막히면 💡 힌트를 눌러요.');
   L.busy = true;
-  setTimeout(() => { board = before; last = beforeLast; L.busy = false; sfxWrong(); draw(); }, 1100);
+  lessonLater(() => { board = before; last = beforeLast; L.busy = false; sfxWrong(); draw(); }, 1100);
 }
 
 // 연속 문제에서 백이 받는 수
@@ -1571,7 +1594,7 @@ function updateUI() {
   $('passBtn').disabled = phase !== 'play' || cpuThinking;
   $('resignBtn').disabled = phase !== 'play' || cpuThinking;
   $('hintBtn').disabled = phase !== 'play' || cpuThinking;
-  $('undoBtn').disabled = !history.length || cpuThinking;
+  $('undoBtn').disabled = !(history.length || resigned) || cpuThinking;
 }
 
 function showModal(emoji, title, body) {
@@ -1586,22 +1609,23 @@ function closeModal() { $('modalBg').classList.remove('show'); }
 function segValue(id, v) {
   document.querySelectorAll(`#${id} button`).forEach(b => b.classList.toggle('on', b.dataset.v === String(v)));
 }
+let draft = {}; // 설정 창에서 고르는 중인 값 ('시작!'을 눌러야 반영)
 function refreshSetup() {
-  segValue('ruleSeg', settings.rule);
-  segValue('targetSeg', settings.target);
-  segValue('sizeSeg', settings.size);
-  segValue('modeSeg', settings.mode);
-  segValue('levelSeg', settings.level);
-  $('ruleDesc').textContent = RULE_DESC[settings.rule];
-  $('targetBox').style.display = settings.rule === 'capture' ? '' : 'none';
-  $('levelBox').style.display = settings.mode === 'cpu' ? '' : 'none';
-  $('levelDesc').textContent = `${LEVELS[settings.level].name} — ${LEVELS[settings.level].desc}`;
+  segValue('ruleSeg', draft.rule);
+  segValue('targetSeg', draft.target);
+  segValue('sizeSeg', draft.size);
+  segValue('modeSeg', draft.mode);
+  segValue('levelSeg', draft.level);
+  $('ruleDesc').textContent = RULE_DESC[draft.rule];
+  $('targetBox').style.display = draft.rule === 'capture' ? '' : 'none';
+  $('levelBox').style.display = draft.mode === 'cpu' ? '' : 'none';
+  $('levelDesc').textContent = `${LEVELS[draft.level].name} — ${LEVELS[draft.level].desc}`;
 }
 function bindSeg(id, key, num) {
   $(id).addEventListener('click', e => {
     const b = e.target.closest('button');
     if (!b) return;
-    settings[key] = num ? +b.dataset.v : b.dataset.v;
+    draft[key] = num ? +b.dataset.v : b.dataset.v;
     refreshSetup();
   });
 }
@@ -1611,10 +1635,14 @@ bindSeg('sizeSeg', 'size', true);
 bindSeg('modeSeg', 'mode');
 bindSeg('levelSeg', 'level', true);
 
-function openSetup() { refreshSetup(); closeModal(); $('setupBg').classList.add('show'); }
+function openSetup() {
+  const { rule, target, size, mode, level } = settings;
+  draft = { rule, target, size, mode, level };
+  refreshSetup(); closeModal(); $('setupBg').classList.add('show'); }
 $('setupCancel').onclick = () => $('setupBg').classList.remove('show');
 $('setupStart').onclick = () => {
   $('setupBg').classList.remove('show');
+  Object.assign(settings, draft);
   saveSettings();
   getAudio();
   newGame();
